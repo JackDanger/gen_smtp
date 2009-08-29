@@ -42,7 +42,6 @@
 
 -record(state, {
 		listener :: port(),       % Listening socket
-		acceptor :: ref(),       % Asynchronous acceptor's internal reference
 		module :: atom(),
 		hostname :: string(),
 		sessions = [] :: [pid()]
@@ -88,8 +87,8 @@ init([Module, Options]) ->
 	case gen_tcp:listen(proplists:get_value(port, NewOptions), Opts) of
 		{ok, Listen_socket} ->
 			%%Create first accepting process
-			{ok, Ref} = prim_inet:async_accept(Listen_socket, -1),
-			{ok, #state{listener = Listen_socket, acceptor = Ref, module = Module, hostname = proplists:get_value(domain, NewOptions)}};
+			{ok, _Ref} = prim_inet:async_accept(Listen_socket, -1),
+			{ok, #state{listener = Listen_socket, module = Module, hostname = proplists:get_value(domain, NewOptions)}};
 		{error, Reason} ->
 			io:format("Could not start gen_tcp:  ~p~n", [Reason]),
 			{stop, Reason}
@@ -107,7 +106,7 @@ handle_cast(_Msg, State) ->
 	{noreply, State}.
 
 %% @hidden
-handle_info({inet_async, ListSock, Ref, {ok, CliSocket}}, #state{listener=ListSock, acceptor=Ref} = State) ->
+handle_info({inet_async, ListSock, _Ref, {ok, CliSocket}}, #state{listener=ListSock} = State) ->
 	try
 		case set_sockopt(ListSock, CliSocket) of
 			ok  ->
@@ -134,7 +133,7 @@ handle_info({inet_async, ListSock, Ref, {ok, CliSocket}}, #state{listener=ListSo
 				exit({async_accept, inet:format_error(NewRef)})
 		end,
 
-		{noreply, State#state{acceptor=NewRef, sessions = Sessions}}
+		{noreply, State#state{sessions = Sessions}}
 	catch exit:Why ->
 		error_logger:error_msg("Error in async accept: ~p.\n", [Why]),
 		{stop, Why, State}
@@ -149,7 +148,7 @@ handle_info({'EXIT', From, Reason}, State) ->
 			{noreply, State}
 	end;
 	
-handle_info({inet_async, ListSock, Ref, Error}, #state{listener=ListSock, acceptor=Ref} = State) ->
+handle_info({inet_async, ListSock, _Ref, Error}, #state{listener=ListSock} = State) ->
 	error_logger:error_msg("Error in socket acceptor: ~p.\n", [Error]),
 	{stop, Error, State};
 
